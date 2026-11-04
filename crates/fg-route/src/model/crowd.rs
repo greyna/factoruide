@@ -1,6 +1,7 @@
 //! The spot where an objective's normal mobs (or objects) are farmed: how many live there, how
 //! many come in each pull, and the wait when the objective asks for more than the spot holds,
-//! shared with the other players of a crowded server. Measured once, when the model is built.
+//! shared with the other players of a crowded server, quickened by them and the group's own
+//! members. Measured once, when the model is built.
 
 use super::builder::QuestBuilder;
 use super::guard::Guards;
@@ -37,6 +38,7 @@ impl QuestBuilder<'_> {
             };
             let crowd = Crowd {
                 others: crowd * p.crowd_players,
+                mates: (p.group_size.clamp(1, 5) - 1) as f64,
                 dynamic: p.dynamic_respawn,
             };
             o.extra += respawn_wait(work, f64::from(o.spawns), each, self.respawn(o, kind), crowd);
@@ -81,19 +83,21 @@ impl QuestBuilder<'_> {
     }
 }
 
-/// The other players at a spot, and how much the game shortens respawns for them
-/// (`Params::dynamic_respawn`).
+/// The other players at a spot, the character's group mates, and how much the game shortens
+/// respawns for each player around (`Params::dynamic_respawn`). The mates do not share the spawns:
+/// their kills, and the items each of them loots, are already the objective's work.
 #[derive(Clone, Copy)]
 struct Crowd {
     others: f64,
+    mates: f64,
     dynamic: f64,
 }
 
 /// Time waiting for respawns: `work` kills (or uses) of `each` seconds at a spot of `spawns`
 /// coming back in `respawn` seconds, shared with the crowd. Once the spot is cleared, one comes
 /// back every `respawn` / spawns seconds, sooner with players around (divided by 1 + dynamic x
-/// others); the wait is what that leaves beyond the kill itself. Nothing when the spot is
-/// unknown.
+/// the others and the mates); the wait is what that leaves beyond the kill itself. Nothing when
+/// the spot is unknown.
 fn respawn_wait(work: f64, spawns: f64, each: f64, respawn: f64, crowd: Crowd) -> f64 {
     if spawns <= 0.0 {
         return 0.0;
@@ -102,7 +106,7 @@ fn respawn_wait(work: f64, spawns: f64, each: f64, respawn: f64, crowd: Crowd) -
     if work <= mine {
         return 0.0;
     }
-    let respawn = respawn / (1.0 + crowd.dynamic * crowd.others);
+    let respawn = respawn / (1.0 + crowd.dynamic * (crowd.others + crowd.mates));
     (respawn / mine - each).max(0.0) * (work - mine)
 }
 
@@ -118,10 +122,12 @@ mod tests {
 
     const ALONE: Crowd = Crowd {
         others: 0.0,
+        mates: 0.0,
         dynamic: 0.5,
     };
     const FIXED: Crowd = Crowd {
         others: 3.0,
+        mates: 0.0,
         dynamic: 0.0,
     };
 
@@ -142,6 +148,7 @@ mod tests {
     fn a_lone_mob_respawning_fast_on_a_crowded_server_is_a_short_wait() {
         let launch = Crowd {
             others: 3.0,
+            mates: 0.0,
             dynamic: 0.5,
         };
         let before = respawn_wait(1.0, 1.0, 25.0, 300.0, FIXED);
@@ -154,11 +161,41 @@ mod tests {
     /// respawns, and not at all beyond the first share when they keep up (dynamic 1).
     #[test]
     fn faster_respawns_with_players_around_soften_the_crowded_wait() {
-        let at = |others: f64, dynamic: f64| respawn_wait(30.0, 10.0, 25.0, 300.0, Crowd { others, dynamic });
+        let at = |others: f64, dynamic: f64| {
+            respawn_wait(
+                30.0,
+                10.0,
+                25.0,
+                300.0,
+                Crowd {
+                    others,
+                    mates: 0.0,
+                    dynamic,
+                },
+            )
+        };
         let (alone, fixed, dynamic) = (at(0.0, 0.5), at(3.0, 0.0), at(3.0, 0.5));
         assert!(alone < dynamic && dynamic < fixed, "{alone} {dynamic} {fixed}");
         // Keeping up: each comes back as often for each player as for one alone.
         let rate = |others: f64| at(others, 1.0) / (30.0 - 10.0 / (1.0 + others));
         assert!((rate(3.0) - rate(0.0)).abs() < 1e-9, "{} {}", rate(3.0), rate(0.0));
+    }
+
+    /// A trio at a small spot: its two mates bring the mobs back sooner without sharing them, so
+    /// each respawn is waited for less than alone; with no mates, the wait is the same as before
+    /// groups counted.
+    #[test]
+    fn a_group_quickens_the_respawns_of_its_spot() {
+        let with = |mates: f64| Crowd { mates, ..ALONE };
+        let (solo, trio) = (
+            respawn_wait(22.0, 7.0, 10.0, 300.0, with(0.0)),
+            respawn_wait(22.0, 7.0, 10.0, 300.0, with(2.0)),
+        );
+        assert!(0.0 < trio && trio < solo, "{solo} {trio}");
+        // Before: the wait shared with nobody, respawns of 300 s.
+        let before = (300.0 / 7.0 - 10.0) * (22.0 - 7.0);
+        assert!((solo - before).abs() < 1e-9, "{solo} {before}");
+        // The mates do not take the spot's mobs: the first 7 kills still wait for nothing.
+        assert!(respawn_wait(7.0, 7.0, 10.0, 300.0, with(2.0)).abs() < 1e-9);
     }
 }
