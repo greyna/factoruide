@@ -74,7 +74,11 @@ level:
   native records take precedence. Aquatic Form travel is not modeled.
 - **Fights and loot**: kill time grows with the level difference and shrinks with the
   character's **power** (below); elites are slower (or need a group); items to loot take as many
-  kills as their drop rate requires.
+  kills as their drop rate requires. In a group whose quest items drop for one player
+  (`group_shared_drops` off, the default), each member the quest is still for loots their own: a
+  loot objective's kills and the uses of objects giving items are counted for each of them, but
+  for the item of a mob standing at a single spawn point (one kill for everyone). A group's
+  members bring a spot's mobs and objects back sooner (`dynamic_respawn`) without sharing them.
 - **XP**: quest XP with the level penalty, mob XP with the classic formula (`5 × level + 45`,
   adjusted by the level difference). Level-ups change everything that follows: which quests are
   worth it, how fast mobs die, how much XP they give.

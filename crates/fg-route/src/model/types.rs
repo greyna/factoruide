@@ -261,6 +261,10 @@ pub struct Objective {
     pub beside_giver: bool,
     /// An item to bring back: it takes a bag slot until the turn-in.
     pub item: bool,
+    /// Players each getting the item for themselves, its kills or uses counted for all of them:
+    /// in a group whose quest items drop for one player only, those the quest is still for (the
+    /// named mob of a single spawn drops it for everyone). 1 otherwise.
+    pub looters: u8,
     /// The other places it can be done (other groups of its mobs or objects), each with what
     /// changes there: the mobs, their level and packs, the guards, the wait for respawns. The
     /// planner goes to the best one from where the character is (`Planner::spot`).
@@ -740,6 +744,28 @@ impl Initial {
             m => self.mates.get(m - 1).is_some_and(|mate| mate.completed.contains(&id)),
         }
     }
+}
+
+/// The players among `members` (a bit each, the character's 1, `players` of them) quest `id` is
+/// still for: not turned in by them (`done`), nor closed by one of its `exclusive` quests or the
+/// quest it is a breadcrumb for.
+pub(crate) fn still_for(
+    members: u8,
+    players: usize,
+    id: i64,
+    exclusive: &[i64],
+    breadcrumb_for: Option<i64>,
+    done: impl Fn(usize, i64) -> bool,
+) -> u8 {
+    (0..players)
+        .filter(|&m| {
+            let done = |id: &i64| done(m, *id);
+            members & (1 << m) != 0
+                && !done(&id)
+                && !exclusive.iter().any(done)
+                && !breadcrumb_for.as_ref().is_some_and(done)
+        })
+        .fold(0, |need, m| need | 1 << m)
 }
 
 /// An objective the game lets be done only once other objectives of its quest are

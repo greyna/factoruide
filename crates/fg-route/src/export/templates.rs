@@ -186,6 +186,34 @@ pub(super) const TEMPLATES: &[(&str, [&str; 9])] = &[
         ],
     ),
     (
+        "objective.group",
+        [
+            "({n} each, ~{total} kills for the group)",
+            "({n} chacun, ~{total} kills pour le groupe)",
+            "({n} pro Spieler, ~{total} Kills für die Gruppe)",
+            "({n} cada uno, ~{total} muertes para el grupo)",
+            "({n} cada, ~{total} abates para o grupo)",
+            "(по {n} каждому, ~{total} убийств на группу)",
+            "(각자 {n}개, 그룹 전체 처치 ~{total})",
+            "（每人{n}个，全队约击杀{total}次）",
+            "（每人{n}個，全隊約擊殺{total}次）",
+        ],
+    ),
+    (
+        "objective.group.loot",
+        [
+            "({n} each, ~{total} to loot for the group)",
+            "({n} chacun, ~{total} à ramasser pour le groupe)",
+            "({n} pro Spieler, ~{total} für die Gruppe einsammeln)",
+            "({n} cada uno, ~{total} que recoger para el grupo)",
+            "({n} cada, ~{total} a coletar para o grupo)",
+            "(по {n} каждому, ~{total} собрать на группу)",
+            "(각자 {n}개, 그룹 전체 수집 ~{total})",
+            "（每人{n}个，全队约拾取{total}次）",
+            "（每人{n}個，全隊約拾取{total}次）",
+        ],
+    ),
+    (
         "objective.text",
         [
             "{text}", "{text}", "{text}", "{text}", "{text}", "{text}", "{text}", "{text}", "{text}",

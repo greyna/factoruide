@@ -58,6 +58,12 @@ export const sections: Section[] = [
     ],
   },
   {
+    title: "Groupe",
+    fields: [
+      { key: "group_shared_drops", kind: "bool", label: "Objets de quête pour chaque membre", help: "Coché : un objet de quête qui tombe est obtenu par tous les membres. Décoché (comme en jeu) : il tombe pour un seul joueur, chacun obtient le sien. Un groupe de 3 tue alors 3 fois plus de mobs pour un objectif de butin et ramasse 3 fois plus d'objets, sauf l'objet d'un mob nommé (un seul point d'apparition), tué une fois pour tous. Les kills restent comptés une fois pour le groupe." },
+    ],
+  },
+  {
     title: "Rythme de jeu",
     help: "Ajustez à votre façon de jouer : un joueur rapide tue plus vite et se repose moins.",
     fields: [

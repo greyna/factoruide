@@ -66,6 +66,23 @@ pub(super) fn objective_phrase(o: &Objective) -> Phrase {
     }
 }
 
+/// In a group whose quest items drop for one player only: what each player gets and the kills,
+/// or the objects looted, of the whole group ("10 each, ~30 kills for the group"). None when
+/// the objective is done once for everyone.
+fn group_phrase(o: &Objective) -> Option<Phrase> {
+    let (key, total) = match (o.kills, o.uses) {
+        _ if o.looters < 2 => return None,
+        (kills, _) if kills > 0.0 => ("objective.group", kills),
+        (_, uses) if uses > 0.0 => ("objective.group.loot", uses),
+        _ => return None,
+    };
+    Some(
+        Phrase::new(key)
+            .arg("n", num(o.count.round().max(1.0) as i64))
+            .arg("total", num(total.round() as i64)),
+    )
+}
+
 impl StepWriter<'_> {
     /// The step of an event of the trace.
     pub(super) fn step(&self, t: &Timed) -> Step {
@@ -433,6 +450,7 @@ impl StepWriter<'_> {
         }
         step.say.push(objective_phrase(o));
         Self::vendors(step, o);
+        step.say.extend(group_phrase(o));
     }
 
     /// An item bought: the vendor at the place named, its supply when limited (it may be sold
@@ -1057,6 +1075,70 @@ mod tests {
                 s.spots
             );
         }
+    }
+
+    /// A loot step of a trio each looting their own says the group's work after the item: 10
+    /// each, 60 kills at 50%. Alone, or with the items dropping for everyone, it does not.
+    #[test]
+    fn a_group_loot_step_says_the_work_of_the_whole_group() {
+        use super::{StepWriter, group_phrase};
+        use crate::export::{Arg, Step, phrase::render_all};
+        use crate::model::{EntityKind, Names};
+        use crate::testing::{Q, Scenario};
+        let p = Scenario::new()
+            .levels(1, 3)
+            .quest(Q::new(1, "Gold Dust").level(1).kill("Gold Dust", 1, 60, 1, 45.0, 45.0))
+            .build();
+        let mut trio = p.model.quests[0].objectives[0].clone();
+        (trio.loc.kind, trio.text, trio.count, trio.looters) = (EntityKind::Item, "Gold Dust x10".into(), 10.0, 3);
+        let says = |o: &crate::model::Objective| {
+            let mut step = Step::bare(StepKind::Objective, 1, 0.0);
+            StepWriter::objective(&mut step, o, 0);
+            step.say
+        };
+        let say = says(&trio);
+        let group = say
+            .iter()
+            .find(|ph| ph.key == "objective.group")
+            .expect("the group's phrase");
+        assert_eq!(
+            (group.args.get("n"), group.args.get("total")),
+            (Some(&Arg::Num(10)), Some(&Arg::Num(60)))
+        );
+        assert_eq!(
+            render_all(&say, &Names::new("enUS")),
+            "Gold Dust x10 (10 each, ~60 kills for the group)"
+        );
+        assert!(render_all(&say, &Names::new("frFR")).ends_with("x10 (10 chacun, ~60 kills pour le groupe)"));
+        // Alone, or shared (the kills for one): the item only.
+        let (solo, shared) = (
+            crate::model::Objective {
+                looters: 1,
+                kills: 20.0,
+                ..trio.clone()
+            },
+            crate::model::Objective {
+                looters: 1,
+                ..trio.clone()
+            },
+        );
+        assert!(
+            says(&solo)
+                .iter()
+                .chain(&says(&shared))
+                .all(|ph| !ph.key.starts_with("objective.group"))
+        );
+        // Objects picked by each: what the group loots.
+        let picked = crate::model::Objective {
+            kills: 0.0,
+            uses: 24.0,
+            count: 8.0,
+            ..trio
+        };
+        assert_eq!(
+            group_phrase(&picked).map(|ph| ph.key),
+            Some("objective.group.loot".to_owned())
+        );
     }
 
     /// Points spread by length: the ends and the middle of a straight path.

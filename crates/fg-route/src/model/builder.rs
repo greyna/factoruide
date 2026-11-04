@@ -1,8 +1,8 @@
 //! Turns a quest row of the database into a quest the planner can do, or the reason why not.
 //! Each decision lives in its own file: selection, givers, objectives, item, quest.
 
-use super::sources::{QuestRow, SourceKind, Sources};
-use super::types::{EntityKind, Loc, Profile, Quest};
+use super::sources::{LinkKind, QuestRow, SourceKind, Sources};
+use super::types::{EntityKind, Loc, Profile, Quest, still_for};
 use crate::params::Params;
 use crate::world::{Pos, World};
 use std::collections::HashSet;
@@ -17,12 +17,19 @@ pub(super) struct QuestBuilder<'a> {
     pub(super) params: &'a Params,
     pub(super) excluded: HashSet<i64>,
     pub(super) excluded_sorts: HashSet<i64>,
-    /// Quest items each group member must loot for themselves (unless drops are shared).
-    pub(super) per_player: f64,
+    /// In a group whose quest items drop for one player only (`Params::group_shared_drops`):
+    /// the quests each member turned in, the character's first. Empty otherwise.
+    looting: Vec<HashSet<i64>>,
 }
 
 impl<'a> QuestBuilder<'a> {
-    pub(super) fn new(sources: &'a Sources, world: &'a World, profile: &'a Profile, params: &'a Params) -> Self {
+    pub(super) fn new(
+        sources: &'a Sources,
+        world: &'a World,
+        profile: &'a Profile,
+        params: &'a Params,
+        starts: &[&crate::job::StartState],
+    ) -> Self {
         Self {
             sources,
             world,
@@ -30,10 +37,12 @@ impl<'a> QuestBuilder<'a> {
             params,
             excluded: params.excluded_quests.iter().copied().collect(),
             excluded_sorts: params.excluded_sorts.iter().copied().collect(),
-            per_player: if params.group_shared_drops {
-                1.0
+            looting: if params.group_shared_drops || starts.len() < 2 {
+                Vec::new()
             } else {
-                params.group_size.clamp(1, 5) as f64
+                (starts.iter())
+                    .map(|s| s.completed.iter().map(|q| q.0).collect())
+                    .collect()
             },
         }
     }
@@ -47,8 +56,23 @@ impl<'a> QuestBuilder<'a> {
         let skill = self.skill(row);
         self.check_rules(row, skill)?;
         let givers = self.givers(row)?;
-        let objectives = self.objectives(row, &givers)?;
+        let looters = self.looters(row, self.members(row, skill));
+        let objectives = self.objectives(row, &givers, looters)?;
         Ok(Some(self.assemble(row, skill, givers, objectives)))
+    }
+
+    /// Players who each get the quest's items for themselves: in a group whose items drop for
+    /// one player only, the `members` it is still for (as `Initial::need`), else 1.
+    fn looters(&self, row: &QuestRow, members: u8) -> u8 {
+        if self.looting.is_empty() {
+            return 1;
+        }
+        let exclusive = self.links(row.id, LinkKind::Exclusive);
+        let breadcrumb = row.breadcrumb_for.filter(|b| *b > 0);
+        let need = still_for(members, self.looting.len(), row.id, &exclusive, breadcrumb, |m, id| {
+            self.looting[m].contains(&id)
+        });
+        need.count_ones().max(1) as u8
     }
 
     /// Dungeon a giver, a mob or an object lives in.

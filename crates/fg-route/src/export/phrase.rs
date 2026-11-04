@@ -70,10 +70,11 @@ impl Phrase {
             rest = &rest[open + close + 1..];
         }
         out.push_str(rest);
-        // A count of things to kill, use or get.
+        // A count of things to kill, use or get (the group's sentence says its own).
         if let Some(Arg::Num(n)) = self.args.get("n")
             && *n > 1
             && self.key.starts_with("objective.")
+            && !self.key.starts_with("objective.group")
         {
             let _ = write!(out, " x{n}");
         }

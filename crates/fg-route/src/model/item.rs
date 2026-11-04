@@ -3,6 +3,7 @@
 
 use super::builder::{QuestBuilder, Skip};
 use super::entities::{alternatives, best_cluster};
+use super::guard::Guards;
 use super::objectives::QuestContext;
 use super::sources::{SourceKind, count_for};
 use super::types::{EntityKind, Loc, Objective, Spots};
@@ -87,8 +88,10 @@ impl QuestBuilder<'_> {
         let objective = if common {
             Self::common_loot(at(quest.anchor, quest.zone), &text, count, self.params.common_item_time)
         } else if let Some((pos, zone, _)) = best_cluster(objects, Some(&quest.anchor)) {
+            // Each player loots their own: the object is used for each of them.
             let loot = |pos: Pos, zone: i64| Objective {
-                uses: count / object_chance.max(0.01),
+                uses: count / object_chance.max(0.01) * f64::from(quest.looters),
+                looters: quest.looters,
                 count,
                 spots: Spots::new(objects, &pos),
                 ..Objective::plain(at(pos, zone), text.clone(), 0.0)
@@ -173,7 +176,8 @@ impl QuestBuilder<'_> {
         } else if self.params.approx_sources && !self.sources.tokens.contains(&target) {
             // Unknown source: mobs of the quest level around the quest giver.
             Objective {
-                kills: count / self.params.default_drop_chance * self.per_player,
+                kills: count / self.params.default_drop_chance * f64::from(quest.looters),
+                looters: quest.looters,
                 mob_level: quest.level,
                 count,
                 ..Objective::plain(at(quest.anchor, quest.zone), text, 0.0)
@@ -315,12 +319,27 @@ impl QuestBuilder<'_> {
             } else {
                 params.default_drop_chance
             };
-            if count / chance * self.per_player <= params.solo_elite_kills {
+            if count / chance * f64::from(self.mob_looters(quest, &elites)) <= params.solo_elite_kills {
                 mob_ids = elites;
             }
         }
         self.keep_good_droppers(quest, target, &mut mob_ids);
         mob_ids
+    }
+
+    /// Players who each loot the item from `mobs` for themselves: the quest's looters, but one
+    /// when the mobs stand at a single spawn point (a named mob, its head or its key drops for
+    /// everyone).
+    fn mob_looters(&self, quest: &QuestContext<'_>, mobs: &[i64]) -> u8 {
+        let mut points: Vec<Pos> = Vec::new();
+        for id in mobs {
+            for (q, _) in self.sources.entities.points(self.world, EntityKind::Npc, *id) {
+                if !points.iter().any(|x| x.dist(&q) < Guards::ONE_POINT) {
+                    points.push(q);
+                }
+            }
+        }
+        if points.len() == 1 { 1 } else { quest.looters }
     }
 
     /// Mobs dropping the item, placed somewhere. Mobs around the quest's level: a rare far above
@@ -433,8 +452,10 @@ impl QuestBuilder<'_> {
                 .collect();
             Spots::new(&points, &pos)
         };
+        let looters = self.mob_looters(quest, mob_ids);
         Objective {
-            kills: count / chance * self.per_player,
+            kills: count / chance * f64::from(looters),
+            looters,
             mob_level,
             elite: here.iter().all(|id| entities.is_elite(*id)),
             count,
@@ -445,5 +466,172 @@ impl QuestBuilder<'_> {
             spots,
             ..Objective::plain(loc, text, 0.0)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::fixture::Fixture;
+    use crate::job::{self, Overrides, PlanRequest, Prepared};
+    use crate::model::Objective;
+    use crate::xp::Edition;
+
+    /// Northshire's quests asking for items: Gold Dust from kobolds of four spawns (half drop it),
+    /// Grimtusk's Tusks from a named boar of one spawn, Pumpkins picked from patches, a lever
+    /// pulled once. The same Gold Dust for a quest a mate did, and for a warrior's quest.
+    const QUESTS: &str = r#"
+[[npc]]
+id = 9200
+name = "Quartermaster"
+level = 10
+friendly_to = "A"
+at = [{ zone = 12, x = 48.6, y = 42.2 }]
+
+[[npc]]
+id = 9201
+name = "Dust Kobold"
+at = [{ zone = 12, x = 47.0, y = 36.0 }, { zone = 12, x = 47.3, y = 36.4 }, { zone = 12, x = 47.6, y = 36.0 }, { zone = 12, x = 47.2, y = 35.6 }]
+
+[[npc]]
+id = 9202
+name = "Grimtusk"
+at = [{ zone = 12, x = 46.0, y = 39.0 }]
+
+[[object]]
+id = 9301
+name = "Pumpkin Patch"
+at = [{ zone = 12, x = 50.0, y = 45.0 }, { zone = 12, x = 50.3, y = 45.3 }, { zone = 12, x = 50.6, y = 45.0 }]
+
+[[object]]
+id = 9302
+name = "Old Lever"
+at = [{ zone = 12, x = 49.0, y = 44.0 }]
+
+[[item]]
+id = 9101
+name = "Gold Dust"
+class = 12
+drops = [{ npc = 9201, chance = 0.5 }]
+
+[[item]]
+id = 9102
+name = "Grimtusk's Tusk"
+class = 12
+drops = [{ npc = 9202, chance = 0.5 }]
+
+[[item]]
+id = 9103
+name = "Pumpkin"
+class = 12
+drops = [{ object = 9301, chance = 1.0 }]
+
+[[quest]]
+id = 9001
+name = "Gold Dust"
+giver = 9200
+objectives = [{ item = 9101, amount = 10 }]
+
+[[quest]]
+id = 9002
+name = "The Tusks of Grimtusk"
+giver = 9200
+objectives = [{ item = 9102, amount = 10 }]
+
+[[quest]]
+id = 9003
+name = "Pumpkins"
+giver = 9200
+objectives = [{ item = 9103, amount = 8 }]
+
+[[quest]]
+id = 9004
+name = "The Old Lever"
+giver = 9200
+objectives = [{ object = 9302, amount = 1 }]
+
+[[quest]]
+id = 9005
+name = "More Gold Dust"
+giver = 9200
+objectives = [{ item = 9101, amount = 10 }]
+
+[[quest]]
+id = 9006
+name = "A Warrior's Gold Dust"
+classes_mask = 1
+giver = 9200
+objectives = [{ item = 9101, amount = 10 }]
+"#;
+
+    /// The guide of a human warrior in Northshire, with mates of `classes` (none: alone), the
+    /// second one having done More Gold Dust; quest items shared or not.
+    fn prepared(classes: &[&str], shared: bool) -> Prepared {
+        let conn = Fixture::new(Edition::Classic).toml(QUESTS).open();
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../overrides");
+        let overrides = Overrides::load_edition(&dir, Edition::Classic).unwrap();
+        let player = |name: &str, class: &str, completed: &[i64]| {
+            serde_json::json!({
+                "name": name, "race": 1, "class": class, "faction": "Alliance", "level": 1,
+                "completed": completed, "position": { "map": 1429, "x": 48.0, "y": 43.0 },
+            })
+        };
+        let mates: Vec<_> = (classes.iter().enumerate())
+            .map(|(k, class)| player(&format!("Mate{k}"), class, if k == 1 { &[9005] } else { &[] }))
+            .collect();
+        let mut params = overrides.params.clone();
+        params.group_shared_drops = shared;
+        let req: PlanRequest = serde_json::from_value(serde_json::json!({
+            "race": "human", "class": "warrior", "from_level": 1, "to_level": 3,
+            "start": player("First", "WARRIOR", &[]), "mates": mates, "params": params,
+        }))
+        .unwrap();
+        job::prepare(&conn, &overrides, &req, &|_| {}).unwrap()
+    }
+
+    fn objective(p: &Prepared, quest: i64) -> &Objective {
+        &p.model.quests[p.model.index[&quest]].objectives[0]
+    }
+
+    const TRIO: &[&str] = &["PRIEST", "MAGE"];
+
+    /// 10 Gold Dust at 50%: 20 kills alone, 60 for a trio each looting their own, 20 when the
+    /// items drop for everyone.
+    #[test]
+    fn each_player_of_a_group_loots_their_own_quest_items() {
+        let kills = |classes, shared| objective(&prepared(classes, shared), 9001).kills;
+        assert!((kills(&[], false) - 20.0).abs() < 1e-9);
+        assert!((kills(TRIO, false) - 60.0).abs() < 1e-9);
+        assert!((kills(TRIO, true) - 20.0).abs() < 1e-9);
+        assert_eq!(objective(&prepared(TRIO, false), 9001).looters, 3);
+    }
+
+    /// The tusks of a boar standing at a single spawn drop for the whole group: 20 kills for the
+    /// trio too.
+    #[test]
+    fn a_named_mob_drops_its_item_for_the_whole_group() {
+        let o = objective(&prepared(TRIO, false), 9002).clone();
+        assert!((o.kills - 20.0).abs() < 1e-9, "{}", o.kills);
+        assert_eq!(o.looters, 1);
+    }
+
+    /// Only the players still needing the quest loot for it: 40 kills when a mate did it, 20 for
+    /// the warrior's own quest.
+    #[test]
+    fn only_the_players_still_needing_the_quest_loot_for_it() {
+        let p = prepared(TRIO, false);
+        assert!((objective(&p, 9005).kills - 40.0).abs() < 1e-9);
+        assert!((objective(&p, 9006).kills - 20.0).abs() < 1e-9);
+        assert_eq!(p.model.initial.need[p.model.index[&9005]].count_ones(), 2);
+    }
+
+    /// 8 Pumpkins: 8 patches picked alone, 24 for a trio; the lever is pulled once whoever needs
+    /// it.
+    #[test]
+    fn each_player_picks_their_own_items_from_objects_and_levers_are_used_once() {
+        let (solo, trio) = (prepared(&[], false), prepared(TRIO, false));
+        assert!((objective(&solo, 9003).uses - 8.0).abs() < 1e-9);
+        assert!((objective(&trio, 9003).uses - 24.0).abs() < 1e-9);
+        let lever = objective(&trio, 9004);
+        assert!((lever.uses - 1.0).abs() < 1e-9 && lever.looters == 1, "{}", lever.uses);
     }
 }
