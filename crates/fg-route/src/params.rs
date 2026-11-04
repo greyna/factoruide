@@ -380,7 +380,9 @@ pub struct Params {
     pub group_size: i64,
     /// Damage each extra group member adds, as a share of one player's.
     pub group_kill_speed: f64,
-    /// Quest items drop for every group member (else each one loots their own).
+    /// Quest items drop for every group member. Off, as in the game: an item drops for one
+    /// player, each one loots their own (the named mob of a single spawn drops it for everyone).
+    /// Settings saved before keep their value.
     pub group_shared_drops: bool,
     /// Levels a group's players may be apart freely: the guide gets them within it first.
     pub group_sync_window: f64,
@@ -626,7 +628,7 @@ impl Default for Params {
             share_every: 500,
             group_size: 1,
             group_kill_speed: 0.8,
-            group_shared_drops: true,
+            group_shared_drops: false,
             group_sync_window: 0.5,
             group_sync_weight: 1.0,
             group_sync_max: 1.0,
@@ -984,6 +986,17 @@ mod tests {
         assert_eq!(built.allow_elite, base.allow_elite);
         assert_eq!(built.flight_weight, base.flight_weight);
         assert_eq!(base.clone().builder().build().seed, base.seed);
+    }
+
+    /// Quest items drop for one player of a group unless asked: new settings follow the game,
+    /// settings saved with shared drops keep them.
+    #[test]
+    fn quest_items_drop_for_one_player_unless_saved_otherwise() {
+        assert!(!Params::default().group_shared_drops);
+        let saved: Params = serde_json::from_value(serde_json::json!({ "group_shared_drops": true })).unwrap();
+        assert!(saved.group_shared_drops);
+        let new: Params = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!new.group_shared_drops);
     }
 
     /// Redridge: hearth to Darkshire then fly back to Lakeshire, 169 s instead of a 3 min walk.
