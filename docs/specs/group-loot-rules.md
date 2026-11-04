@@ -6,7 +6,7 @@ In a group, every kill counts for every member, but a quest item that drops goes
 
 Factoruide already models the drop rule as one global setting, `group_shared_drops`, on by default (every member gets the drop). This feature makes the planner, the app and the addon follow the one-player rule when that setting is off, and turns it off for new settings.
 
-## Today's behaviour (v0.14.0)
+## Today's behaviour (main, 2026-11-04)
 
 Kill objectives are already right; loot objectives follow the one-player rule only when `group_shared_drops` is off, and objects never do.
 
@@ -18,13 +18,14 @@ Kill objectives are already right; loot objectives follow the one-player rule on
 | Object objectives | `model/item.rs` (object items) | `uses` = count ÷ object chance, never multiplied by n. |
 | Spot and respawns | `model/crowd.rs` `respawn_wait` | Waits when `work` exceeds the spot's spawns; shares the spot with `crowded` × `crowd_players` other players and speeds respawns by 1 + `dynamic_respawn` × others. Group members are not counted. |
 | Mob XP | `group_xp_share()` | The game's group bonus split between members. |
+| Players of a quest | `model/types.rs` `Quest::members`, `Initial::need`; `job/group.rs` `join` | Which players each quest is for (race, class) and which of them still need it (not done yet). A group guide is planned for the player with the least XP; the others follow its stops. `per_player` does not use them: it is the group's size for every quest. |
 | Setting | `app/src/paramSchema.ts`, section Groupe | `group_shared_drops` checkbox, on by default (`Params::default`, `#[serde(default)]`). |
 
 With the setting off, a loot objective in a duo takes 2 ÷ 1.8 = 1.11× the solo time and in a trio 3 ÷ 2.6 = 1.15×, versus 0.56× and 0.38× for a kill objective.
 
 ## Decisions
 
-D3, D4, D5 and D8 apply when `group_shared_drops` is off and the group has 2 to 5 players; D6 and D7 apply to any group. Solo guides do not change.
+D3, D4, D5 and D8 apply when `group_shared_drops` is off and the group has 2 to 5 players; D6 and D7 apply to any group. Solo guides do not change. In D3 to D8, n is the number of players who still need the quest (it is for their race and class, and they have not done it), not the group's size: a class quest for one player, or a quest the others already did, stays ×1.
 
 | # | Topic | Rule | Decided |
 | --- | --- | --- | --- |
@@ -42,11 +43,11 @@ D3, D4, D5 and D8 apply when `group_shared_drops` is off and the group has 2 to 
 Pointers for the implementer, who chooses the design. Most of the change probably sits where the model builds objectives (`crates/fg-route/src/model`): with the right kills and uses there, the planner, the optimizer and the guide follow.
 
 - **Default** (D2): `group_shared_drops` is set in `Params::default` (`params.rs`). The app's form takes its defaults from `options.params` and saved guides store their whole `params`, so changing the default should leave old guides as they are. No `overrides/*/routing.toml` sets it.
-- **Loot** (D3, D4): `model/builder.rs` computes `per_player` (1 when shared or solo, n otherwise), used by `model/item.rs` for mob drops, approximate sources and the solo elite threshold. The named-mob exception could count the droppers' spawn points the way `model/crowd.rs` `spot_points` does.
+- **Loot** (D3, D4): `model/builder.rs` computes `per_player` once for the whole model (1 when shared or solo, the group's size otherwise), used by `model/item.rs` for mob drops, approximate sources and the solo elite threshold. With n per quest, it would come from the players who still need the quest: `Quest::members` and `Initial::need`, which `job/group.rs` `join` fills after the model is built. The named-mob exception could count the droppers' spawn points the way `model/crowd.rs` `spot_points` does.
 - **Objects** (D5): object items get `uses = count / object_chance` in `model/item.rs`, never multiplied today. Only objects whose item goes to the bags should multiply, not levers or braziers.
 - **Kills** (D6): kill objectives come from `model/objectives.rs`; every kill time is divided by `Params::group_damage()`.
 - **Group at the spot** (D7): `model/crowd.rs` `respawn_wait` already shares a spot with a crowded server's players and speeds respawns with `dynamic_respawn`. Counting the members among the players sharing the spawns would count the group twice (D7), since faster kills and the n× work already empty the spot sooner.
-- **Guide text** (D8): `export/writer.rs` `objective_phrase` writes a step's phrases, from templates in `export/templates.rs` (9 languages). The app's guide page and the addon both show them.
+- **Guide text** (D8): `export/writer.rs` `objective_phrase` writes a step's phrases, from templates in `export/templates.rs` (9 languages). The app's guide page and the addon both show them. The writer already marks which players a step is for (`Step::members`, from `need`).
 - **Setting text**: `app/src/paramSchema.ts` (Groupe section); the CI checks that every `t()` text is in the catalog.
 
 ## Tests and acceptance
@@ -57,6 +58,7 @@ The feature is done when the unit tests below pass, solo guides come out unchang
 
 - `item.rs`: a loot objective of 10 items at 50% gives 20 kills solo, 60 in a trio with the setting off, 20 with it on.
 - `item.rs`: the same item from a mob with one spawn point gives 20 kills in a trio, setting off (D4).
+- The same loot objective in a trio where one player already did the quest gives 40 kills; a class quest for one player of the trio gives 20.
 - `item.rs`: an object item of 8 gives 8 uses solo and 24 in a trio, setting off; a lever used once stays 1 (D5).
 - `crowd.rs`: `respawn_wait` with a trio waits less per respawn than solo for the same work (D7), and the same as today with n = 1.
 - `writer.rs`: a trio loot step has the `objective.group` phrase with `n` 10 and `total` 60; a solo step and a shared-drops step do not.
