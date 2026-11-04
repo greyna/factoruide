@@ -51,6 +51,8 @@ pub(super) struct QuestContext<'r> {
     pub(super) requirements: Vec<(String, f64)>,
     /// Items an assembled item is made of.
     pub(super) parts: Vec<i64>,
+    /// Players who each get its items for themselves (`QuestBuilder::looters`).
+    pub(super) looters: u8,
 }
 
 impl Objective {
@@ -74,6 +76,7 @@ impl Objective {
             guard: Guard::default(),
             beside_giver: false,
             item: false,
+            looters: 1,
             alts: vec![],
             after: 0,
             handed_by: vec![],
@@ -87,8 +90,8 @@ impl Objective {
 }
 
 impl QuestBuilder<'_> {
-    pub(super) fn objectives(&self, r: &QuestRow, givers: &Givers) -> Result<Vec<Objective>, Skip> {
-        let quest = self.context(r, givers);
+    pub(super) fn objectives(&self, r: &QuestRow, givers: &Givers, looters: u8) -> Result<Vec<Objective>, Skip> {
+        let quest = self.context(r, givers, looters);
         let rows = self.sources.objectives.get(&r.id).cloned().unwrap_or_default();
         // Filed under a dungeon, objectives unknown ("Look for Daewyn in Whelgar's Excavation
         // Site"): done by running the dungeon, not free.
@@ -174,7 +177,7 @@ impl QuestBuilder<'_> {
         self.spots_and_crowd(r, objs);
     }
 
-    fn context<'r>(&self, r: &'r QuestRow, givers: &Givers) -> QuestContext<'r> {
+    fn context<'r>(&self, r: &'r QuestRow, givers: &Givers, looters: u8) -> QuestContext<'r> {
         let (anchor, zone) = (givers.starts[0].pos, givers.starts[0].zone);
         QuestContext {
             row: r,
@@ -191,6 +194,7 @@ impl QuestBuilder<'_> {
                 .iter()
                 .filter_map(serde_json::Value::as_i64)
                 .collect(),
+            looters,
         }
     }
 

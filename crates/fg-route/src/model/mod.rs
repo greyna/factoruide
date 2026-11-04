@@ -35,6 +35,7 @@ pub use givers::{Dropper, UNKNOWN_START_CHANCE, assumed_start_chance};
 pub use guard::Guards;
 pub use loot::CommonLoot;
 pub use names::Names;
+pub(crate) use types::still_for;
 pub use types::{
     ClassRequirement, CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, FloorPoint, Guard, Initial, Loc,
     Mate, MateStart, Model, Objective, ObjectiveOrder, ProfessionPlan, ProfessionTrainer, Profile, Quest,
@@ -107,7 +108,7 @@ pub fn load(
         &known_prerequisites,
         &reward_quests,
     )?;
-    let (mut quests, mut skipped) = build_quests(&sources, world, profile, params);
+    let (mut quests, mut skipped) = build_quests(&sources, world, profile, params, starts);
     let mut known = derive::Knowledge {
         rewards: known_rewards,
         prerequisites: known_prerequisites,
@@ -336,14 +337,15 @@ fn build_quests(
     world: &World,
     profile: &Profile,
     params: &Params,
+    starts: &[&crate::job::StartState],
 ) -> (Vec<Quest>, Vec<(i64, String, String)>) {
-    let builder = QuestBuilder::new(sources, world, profile, params);
+    let builder = QuestBuilder::new(sources, world, profile, params, starts);
     // The quests the player asked for are done even when their mobs are elites.
     let with_elites = Params {
         allow_elite: true,
         ..params.clone()
     };
-    let asked = QuestBuilder::new(sources, world, profile, &with_elites);
+    let asked = QuestBuilder::new(sources, world, profile, &with_elites, starts);
     let mut quests = Vec::new();
     let mut skipped = Vec::new();
     for row in &sources.rows {

@@ -96,13 +96,18 @@ impl QuestBuilder<'_> {
                 .into_iter()
                 .map(|(f, v)| (f, v as f64 * self.profile.reputation_rate()))
                 .collect(),
-            // A profession quest is for those leveling the profession.
-            members: self.profile.members_of(r.races, r.classes)
-                & skill
-                    .flatten()
-                    .and_then(|(p, _)| self.profile.profession_goals().get(p).map(|(_, m)| *m))
-                    .unwrap_or(u8::MAX),
+            members: self.members(r, skill),
         }
+    }
+
+    /// The members of the group the quest is for (`Quest::members`): its races and classes; a
+    /// profession quest, those leveling the profession.
+    pub(super) fn members(&self, r: &QuestRow, skill: QuestSkill) -> u8 {
+        self.profile.members_of(r.races, r.classes)
+            & skill
+                .flatten()
+                .and_then(|(p, _)| self.profile.profession_goals().get(p).map(|(_, m)| *m))
+                .unwrap_or(u8::MAX)
     }
 
     /// Whether the quest is one of a forced zone: filed under it (or a subzone), else given

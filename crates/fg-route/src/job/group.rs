@@ -3,7 +3,7 @@
 //! stops, each getting the XP of the quests still for it.
 
 use super::StartState;
-use crate::model::{MateStart, Model};
+use crate::model::{MateStart, Model, still_for};
 use crate::world::World;
 use std::collections::HashSet;
 
@@ -38,15 +38,14 @@ pub(super) fn join(
     let init = &model.initial;
     let need: Vec<u8> = (model.quests.iter())
         .map(|q| {
-            (0..=mates.len())
-                .filter(|&m| {
-                    let done = |id: &i64| init.done_by(m, *id);
-                    q.members & (1 << m) != 0
-                        && !done(&q.id)
-                        && !q.exclusive.iter().any(done)
-                        && !q.breadcrumb_for.as_ref().is_some_and(done)
-                })
-                .fold(0, |need, m| need | 1 << m)
+            still_for(
+                q.members,
+                mates.len() + 1,
+                q.id,
+                &q.exclusive,
+                q.breadcrumb_for,
+                |m, id| init.done_by(m, id),
+            )
         })
         .collect();
     // In the log of everyone it is for: the group carries on with it, as far as the character
