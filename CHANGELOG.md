@@ -10,6 +10,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- A Group section in the settings: "Quest items for every member", off for new settings as in the game; settings saved before keep theirs.
 - The steps inside a dungeon are a block of their own on the guide page, shown on the map of the dungeon's floor they are on (Classic and WoW Forever dungeons, from the game's own dungeon maps).
 - The first guide of a game version no longer fails now and then because another command removed its data while unpacking it.
 - A settings change made while the addon installs, or while a character is added back or forgotten, is no longer lost.
@@ -17,6 +18,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Group guides: a quest item drops for one player only, as in the game. Each player still needing the quest loots their own: a trio kills 3 times the mobs of a loot objective (faster together, so about 1.15 times the solo time) and picks up 3 times the plants and crates, but the item of a named mob (a single spawn) is one kill for everyone. The step says it: "Gold Dust x10 (10 each, ~60 kills for the group)".
+- Group guides: the group's own players bring a spot's mobs and objects back sooner, as other players do.
 - A dungeon's quests are steps inside it: taken from a boss's drop or a giver inside, objectives and hand-ins, each where it is done, the dungeon entered once (its run's time and mobs counted then). Guides made before get those steps when opened.
 - After a quest at an NPC who walks around, the level checkpoint's arrow points at the checkpoint, not along the NPC's path.
 - A guide text with a control character or a character name with an unusual letter is written into the data addon as the game reads it, not as stray letters.
